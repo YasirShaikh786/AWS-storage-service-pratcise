@@ -1,5 +1,5 @@
 export const writeEBSLog = async (content) => {
-    const response = await fetch('/write-ebs-log', {
+    const response = await fetch('http://localhost:3000/write-ebs-log', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content }),
@@ -13,7 +13,7 @@ export const writeEBSLog = async (content) => {
   };
   
   export const readEBSLogs = async (lines = 10) => {
-    const response = await fetch(`/read-ebs-logs?lines=${lines}`);
+    const response = await fetch(`http://localhost:3000/read-ebs-logs?lines=${lines}`);
   
     if (!response.ok) {
       throw new Error(await response.text());

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import AwsServiceCard from '../components/AwsServiceCard';
+import AwsServiceCard from '../components/AwsSeriveCard';
 import TabContainer from '../components/TabContainer';
 import StatusBadge from '../components/StatusBadge';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -8,16 +8,16 @@ import {
   listS3Files,
   downloadS3File,
   deleteS3File,
-} from '../services/s3Service';
+} from '../../services/s3Service';
 import {
   writeEBSLog,
   readEBSLogs,
-} from '../services/ebsService';
+} from '../../services/ebsSerice';
 import {
   writeEFSFile,
   readEFSFile,
   listEFSFiles,
-} from '../services/efsService';
+} from '../../services/efsService';
 
 const AwsStorageDemo = () => {
   // S3 State

@@ -1,5 +1,5 @@
 export const writeEFSFile = async (filename, content) => {
-    const response = await fetch('/write-efs', {
+    const response = await fetch('http://localhost:3000/write-efs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ filename, content }),
@@ -13,7 +13,7 @@ export const writeEFSFile = async (filename, content) => {
   };
   
   export const readEFSFile = async (filename) => {
-    const response = await fetch(`/read-efs?filename=${encodeURIComponent(filename)}`);
+    const response = await fetch(`http://localhost:3000/read-efs?filename=${encodeURIComponent(filename)}`);
   
     if (!response.ok) {
       throw new Error(await response.text());
@@ -23,7 +23,7 @@ export const writeEFSFile = async (filename, content) => {
   };
   
   export const listEFSFiles = async () => {
-    const response = await fetch('/list-efs');
+    const response = await fetch('http://localhost:3000/list-efs');
   
     if (!response.ok) {
       throw new Error(await response.text());

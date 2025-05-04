@@ -3,7 +3,7 @@ export const uploadToS3 = async (file, path = '') => {
     formData.append('file', file);
     if (path) formData.append('path', path);
   
-    const response = await fetch('/upload-s3', {
+    const response = await fetch('http://localhost:3000/upload-s3', {
       method: 'POST',
       body: formData,
     });
@@ -16,7 +16,7 @@ export const uploadToS3 = async (file, path = '') => {
   };
   
   export const listS3Files = async () => {
-    const response = await fetch('/list-s3');
+    const response = await fetch('http://localhost:3000/list-s3');
     
     if (!response.ok) {
       throw new Error(await response.text());
@@ -26,7 +26,7 @@ export const uploadToS3 = async (file, path = '') => {
   };
   
   export const downloadS3File = async (key) => {
-    const response = await fetch(`/download-s3?key=${encodeURIComponent(key)}`);
+    const response = await fetch(`http://localhost:3000/download-s3?key=${encodeURIComponent(key)}`);
     
     if (!response.ok) {
       throw new Error(await response.text());
@@ -44,7 +44,7 @@ export const uploadToS3 = async (file, path = '') => {
   };
   
   export const deleteS3File = async (key) => {
-    const response = await fetch(`/delete-s3?key=${encodeURIComponent(key)}`, {
+    const response = await fetch(`http://localhost:3000/delete-s3?key=${encodeURIComponent(key)}`, {
       method: 'DELETE',
     });
   
