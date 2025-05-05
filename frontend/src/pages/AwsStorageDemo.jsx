@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import AwsServiceCard from '../components/AwsSeriveCard';
+import AwsServiceCard from '../components/AwsServiceCard';
 import TabContainer from '../components/TabContainer';
 import StatusBadge from '../components/StatusBadge';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -115,7 +115,8 @@ const AwsStorageDemo = () => {
   const handleReadEBS = async () => {
     setIsEbsLoading(true);
     try {
-      const logs = await readEBSLogs(logLines);
+      const response = await readEBSLogs(logLines); // response is { status, data: { logs, ... } }
+      const logs = response.data.logs;
       setEbsLogs(logs.join('\n'));
     } catch (error) {
       setEbsLogs(`Error reading logs: ${error.message}`);
@@ -123,6 +124,7 @@ const AwsStorageDemo = () => {
       setIsEbsLoading(false);
     }
   };
+  
 
   // EFS Handlers
   const handleWriteEFS = async () => {

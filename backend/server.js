@@ -8,12 +8,9 @@ import 'dotenv/config';
 
 const app = express();
 
-// Middleware
 app.use(cors());
 app.use(express.json());
 const upload = multer({ dest: 'uploads/' }); // Temp storage
-
-// Configure AWS S3 Client
 const s3Client = new S3Client({
   region: process.env.AWS_REGION,
   credentials: {
@@ -24,11 +21,35 @@ const s3Client = new S3Client({
 
 const BUCKET_NAME = process.env.S3_BUCKET;
 
-// Ensure directories exist
-const EBS_LOG_PATH = '/mnt/ebs/log.txt';
-const EFS_DIR = '/mnt/efs';
+const EBS_MOUNT_PATH = '/mnt/ebs';  // Where EBS volume is mounted
+const EFS_MOUNT_PATH = '/mnt/efs';   // Where EFS is mounted
+const EBS_LOG_FILE = path.join(EBS_MOUNT_PATH, 'app.log');
 
-// S3 Routes
+const initializeStorage = () => {
+  try {
+    // Create directories if they don't exist
+    if (!fs.existsSync(EBS_MOUNT_PATH)) {
+      fs.mkdirSync(EBS_MOUNT_PATH, { recursive: true });
+      console.log(`Created EBS mount directory at ${EBS_MOUNT_PATH}`);
+    }
+    
+    if (!fs.existsSync(EFS_MOUNT_PATH)) {
+      fs.mkdirSync(EFS_MOUNT_PATH, { recursive: true });
+      console.log(`Created EFS mount directory at ${EFS_MOUNT_PATH}`);
+    }
+    
+    // Verify EBS is writable
+    fs.accessSync(EBS_MOUNT_PATH, fs.constants.W_OK);
+    // Verify EFS is writable
+    fs.accessSync(EFS_MOUNT_PATH, fs.constants.W_OK);
+    
+    console.log('Storage systems initialized successfully');
+  } catch (err) {
+    console.error('Storage initialization failed:', err);
+    process.exit(1); // Exit if storage isn't available
+  }
+};
+
 app.post('/upload-s3', upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
   
@@ -39,15 +60,13 @@ app.post('/upload-s3', upload.single('file'), async (req, res) => {
   try {
     const fileStream = fs.createReadStream(req.file.path);
     
-    const params = {
+    await s3Client.send(new PutObjectCommand({
       Bucket: BUCKET_NAME,
       Key: filePath,
       Body: fileStream,
-    };
-
-    await s3Client.send(new PutObjectCommand(params));
-    fs.unlinkSync(req.file.path); // Clean up temp file
+    }));
     
+    fs.unlinkSync(req.file.path); // Clean up temp file
     res.json({ 
       location: `https://${BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${filePath}` 
     });
@@ -57,123 +76,143 @@ app.post('/upload-s3', upload.single('file'), async (req, res) => {
   }
 });
 
-app.get('/list-s3', async (req, res) => {
-  try {
-    const data = await s3Client.send(
-      new ListObjectsV2Command({ Bucket: BUCKET_NAME })
-    );
-    res.json(data.Contents || []);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.get('/download-s3', async (req, res) => {
-  try {
-    const { key } = req.query;
-    if (!key) return res.status(400).json({ error: 'Key is required' });
-    
-    const data = await s3Client.send(
-      new GetObjectCommand({ Bucket: BUCKET_NAME, Key: key })
-    );
-    
-    // Convert stream to buffer for Express response
-    const chunks = [];
-    for await (const chunk of data.Body) {
-      chunks.push(chunk);
-    }
-    const buffer = Buffer.concat(chunks);
-    
-    res.attachment(path.basename(key));
-    res.send(buffer);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.delete('/delete-s3', async (req, res) => {
-  try {
-    const { key } = req.query;
-    if (!key) return res.status(400).json({ error: 'Key is required' });
-    
-    await s3Client.send(
-      new DeleteObjectCommand({ Bucket: BUCKET_NAME, Key: key })
-    );
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// EBS Routes (unchanged)
 app.post('/write-ebs-log', (req, res) => {
   try {
-    const content = req.body.content || `Log at ${new Date().toISOString()}\n`;
-    fs.appendFileSync(EBS_LOG_PATH, content);
-    res.json({ timestamp: new Date().toISOString() });
+    const content = req.body.content || `[${new Date().toISOString()}] New log entry\n`;
+    
+    // Append to EBS log file
+    fs.appendFileSync(EBS_LOG_FILE, content);
+    
+    res.json({ 
+      success: true,
+      timestamp: new Date().toISOString(),
+      path: EBS_LOG_FILE
+    });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ 
+      error: 'EBS write failed',
+      details: err.message 
+    });
   }
 });
 
 app.get('/read-ebs-logs', (req, res) => {
   try {
-    const lines = parseInt(req.query.lines) || 10;
-    if (!fs.existsSync(EBS_LOG_PATH)) return res.json([]);
-    
-    const content = fs.readFileSync(EBS_LOG_PATH, 'utf-8');
-    const logLines = content.split('\n').filter(line => line.trim());
-    res.json(logLines.slice(-lines));
+    // 1. Read file content
+    const content = fs.existsSync(EBS_LOG_FILE)
+      ? fs.readFileSync(EBS_LOG_FILE, 'utf-8')
+      : '';
+
+    // 2. Process into array of log entries
+    const logArray = typeof content === 'string'
+      ? content.split(/\r?\n/).filter(line => line.trim().length > 0)
+      : [];
+
+    // 3. Format response
+    const response = {
+      status: 'success',
+      data: {
+        logs: logArray,  // Guaranteed to be an array
+        count: logArray.length,
+        fileInfo: {
+          path: EBS_LOG_FILE,
+          exists: fs.existsSync(EBS_LOG_FILE),
+          size: content.length
+        }
+      }
+    };
+
+    return res.json(response);
+
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({
+      status: 'error',
+      message: 'Failed to read logs',
+      error: {
+        name: err.name,
+        message: err.message,
+        ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+      }
+    });
   }
 });
 
-// EFS Routes (unchanged)
+
 app.post('/write-efs', (req, res) => {
   try {
     const { filename, content } = req.body;
-    if (!filename) return res.status(400).json({ error: 'Filename is required' });
     
-    const filePath = path.join(EFS_DIR, filename);
+    if (!filename) {
+      return res.status(400).json({ error: 'Filename is required' });
+    }
+    
+    const filePath = path.join(EFS_MOUNT_PATH, filename);
     fs.writeFileSync(filePath, content || '');
-    res.json({ path: filePath });
+    
+    res.json({ 
+      success: true,
+      path: filePath,
+      size: fs.statSync(filePath).size
+    });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ 
+      error: 'EFS write failed',
+      details: err.message 
+    });
   }
 });
 
 app.get('/read-efs', (req, res) => {
   try {
     const { filename } = req.query;
-    if (!filename) return res.status(400).json({ error: 'Filename is required' });
     
-    const filePath = path.join(EFS_DIR, filename);
-    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
+    if (!filename) {
+      return res.status(400).json({ error: 'Filename is required' });
+    }
     
-    const content = fs.readFileSync(filePath, 'utf-8');
-    res.json({ content });
+    const filePath = path.join(EFS_MOUNT_PATH, filename);
+    
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+    
+    res.json({
+      content: fs.readFileSync(filePath, 'utf-8'),
+      stats: fs.statSync(filePath)
+    });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ 
+      error: 'EFS read failed',
+      details: err.message 
+    });
   }
 });
 
 app.get('/list-efs', (req, res) => {
   try {
-    if (!fs.existsSync(EFS_DIR)) return res.json([]);
+    if (!fs.existsSync(EFS_MOUNT_PATH)) {
+      return res.json({ files: [], message: 'EFS directory is empty' });
+    }
     
-    const files = fs.readdirSync(EFS_DIR);
-    res.json(files);
+    const files = fs.readdirSync(EFS_MOUNT_PATH);
+    
+    res.json({
+      count: files.length,
+      files: files.map(file => ({
+        name: file,
+        path: path.join(EFS_MOUNT_PATH, file),
+        stats: fs.statSync(path.join(EFS_MOUNT_PATH, file))
+      }))
+    });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ 
+      error: 'EFS list failed',
+      details: err.message 
+    });
   }
 });
 
-// Start server
 app.listen(3000, () => {
+  initializeStorage(); // Validate storage systems
   console.log('Server running on http://localhost:3000');
-  
-  // Create directories if they don't exist
-  if (!fs.existsSync('/mnt/ebs')) fs.mkdirSync('/mnt/ebs', { recursive: true });
-  if (!fs.existsSync('/mnt/efs')) fs.mkdirSync('/mnt/efs', { recursive: true });
 });

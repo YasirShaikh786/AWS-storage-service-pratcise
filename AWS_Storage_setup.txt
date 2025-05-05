@@ -1,0 +1,94 @@
+# AWS Storage Setup Guide
+# S3, EBS, and EFS Configuration Steps
+# Last Updated: [DATE]
+
+=======================
+1. Amazon S3 Setup (Object Storage)
+=======================
+
+A. Create a Bucket:
+   - Go to AWS Console > S3 > "Create bucket"
+   - Set unique name (e.g., "my-app-bucket")
+   - Disable "Block all public access" (if needed)
+   - Click "Create bucket"
+
+B. Upload Files via AWS CLI:
+   aws s3 cp local-file.txt s3://my-app-bucket/path/
+
+C. Access Files Programmatically (Node.js):
+   const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
+   const s3 = new S3Client({ region: "us-east-1" });
+
+   await s3.send(new PutObjectCommand({
+     Bucket: "my-app-bucket",
+     Key: "remote-file.txt",
+     Body: "File content"
+   }));
+
+=======================
+2. EBS Setup (Block Storage)
+=======================
+
+A. Create and Attach Volume:
+   - EC2 > Volumes > "Create volume"
+   - Select AZ matching your EC2 instance
+   - Attach to instance with device name: /dev/sdf
+
+B. Connect to EC2 and Format:
+   ssh -i "key.pem" ec2-user@<PUBLIC_IP>
+   lsblk                         # Verify volume (e.g., /dev/nvme1n1)
+   sudo mkfs -t xfs /dev/nvme1n1 # Format
+   sudo mkdir /mnt/ebs           # Create mount point
+   sudo mount /dev/nvme1n1 /mnt/ebs
+
+C. Auto-Mount on Reboot:
+   echo "/dev/nvme1n1 /mnt/ebs xfs defaults,nofail 0 2" | sudo tee -a /etc/fstab
+
+=======================
+3. EFS Setup (File Storage)
+=======================
+
+A. Create File System:
+   - AWS Console > EFS > "Create file system"
+   - Select VPC and availability zones
+   - Note File System ID (e.g., fs-12345678)
+
+B. Mount to EC2 Instance:
+   sudo yum install -y amazon-efs-utils
+   sudo mkdir /mnt/efs
+   sudo mount -t efs fs-12345678:/ /mnt/efs
+
+C. Auto-Mount on Reboot:
+   echo "fs-12345678:/ /mnt/efs efs defaults,_netdev 0 0" | sudo tee -a /etc/fstab
+
+=======================
+4. Verification Commands
+=======================
+
+# S3:
+aws s3 ls s3://my-app-bucket/
+
+# EBS:
+df -h /mnt/ebs
+ls /mnt/ebs
+
+# EFS:
+df -h /mnt/efs
+ls /mnt/efs
+
+=======================
+5. Cleanup (Avoid Costs)
+=======================
+
+# S3:
+aws s3 rm s3://my-app-bucket --recursive
+aws s3api delete-bucket --bucket my-app-bucket
+
+# EBS:
+sudo umount /mnt/ebs
+aws ec2 detach-volume --volume-id vol-12345
+aws ec2 delete-volume --volume-id vol-12345
+
+# EFS:
+sudo umount /mnt/efs
+aws efs delete-file-system --file-system-id fs-12345678
